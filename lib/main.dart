@@ -1,21 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:fl_chart/fl_chart.dart'; // Импорт графиков
 
 void main() => runApp(CalorieApp());
 
-class CalorieApp extends StatelessWidget {
+class CalorieApp extends StatefulWidget {
+  @override
+  State<CalorieApp> createState() => _CalorieAppState();
+}
+
+class _CalorieAppState extends State<CalorieApp> {
+  bool _isDark = false;
+
+  void _toggleTheme(bool value) {
+    setState(() => _isDark = value);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true, colorSchemeSeed: Colors.blueAccent),
-      home: HomePage(),
+      theme: ThemeData(
+        useMaterial3: true, 
+        colorSchemeSeed: Colors.blueAccent,
+        brightness: _isDark ? Brightness.dark : Brightness.light,
+      ),
+      home: HomePage(onThemeChanged: _toggleTheme, isDark: _isDark),
     );
   }
 }
 
 class HomePage extends StatefulWidget {
+  final Function(bool) onThemeChanged;
+  final bool isDark;
+  HomePage({required this.onThemeChanged, required this.isDark});
+
   @override
   _HomePageState createState() => _HomePageState();
 }
@@ -51,10 +71,38 @@ class _HomePageState extends State<HomePage> {
 
   void _addMeal(String name, int calories) {
     setState(() {
-      _meals.insert(0, {'name': name, 'calories': calories, 'time': DateTime.now().toString()});
+      _meals.insert(0, {'name': name, 'calories': calories});
       _totalCalories += calories;
     });
     _saveData();
+  }
+
+  void _showSettings() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ListTile(
+            leading: Icon(Icons.dark_mode),
+            title: Text("Темная тема"),
+            trailing: Switch(value: widget.isDark, onChanged: (v) {
+              widget.onThemeChanged(v);
+              Navigator.pop(context);
+            }),
+          ),
+          ListTile(
+            leading: Icon(Icons.edit),
+            title: Text("Изменить цель (ккал)"),
+            onTap: () {
+              Navigator.pop(context);
+              _changeGoal();
+            },
+          ),
+          SizedBox(height: 20),
+        ],
+      ),
+    );
   }
 
   void _changeGoal() {
@@ -62,104 +110,92 @@ class _HomePageState extends State<HomePage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text('Изменить цель'),
-        content: TextField(
-          controller: _controller,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(suffixText: 'ккал'),
-        ),
+        title: Text('Дневная цель'),
+        content: TextField(controller: _controller, keyboardType: TextInputType.number),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Отмена')),
-          ElevatedButton(
-            onPressed: () {
-              setState(() => _goal = int.tryParse(_controller.text) ?? 2000);
-              _saveData();
-              Navigator.pop(context);
-            },
-            child: Text('ОК'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('ОК')),
+          ElevatedButton(onPressed: () {
+            setState(() => _goal = int.tryParse(_controller.text) ?? 2000);
+            _saveData();
+            Navigator.pop(context);
+          }, child: Text('Сохранить')),
         ],
       ),
     );
-  }
-
-  String _getMotivationText() {
-    double p = _totalCalories / _goal;
-    if (p == 0) return "Начнем день с завтрака? 🍳";
-    if (p < 0.5) return "Отличное начало! Продолжай в том же духе. 👍";
-    if (p < 0.8) return "Уже неплохо поели, место еще есть. 🍎";
-    if (p <= 1.0) return "Почти норма! Выбирай перекусы мудро. 🥗";
-    return "Лимит превышен! Пора на прогулку. 🏃‍♂️";
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar.large(
-            title: Text('Дневник питания', style: TextStyle(fontWeight: FontWeight.bold)),
-            actions: [IconButton(icon: Icon(Icons.settings), onPressed: _changeGoal)],
-          ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: EdgeInsets.all(16.0),
-              child: Column(
-                children: [
-                  _buildStatusCard(),
-                  SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Text("История сегодня", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      Spacer(),
-                      TextButton(onPressed: () => setState(() { _meals.clear(); _totalCalories = 0; _saveData(); }), child: Text("Очистить")),
-                    ],
-                  ),
-                ],
+      appBar: AppBar(
+        title: Text('Трекер калорий'),
+        actions: [IconButton(icon: Icon(Icons.settings), onPressed: _showSettings)],
+      ),
+      body: Column(
+        children: [
+          _buildChartCard(),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _meals.length,
+              itemBuilder: (context, index) => Card(
+                margin: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: ListTile(
+                  title: Text(_meals[index]['name']),
+                  trailing: Text("${_meals[index]['calories']} ккал"),
+                ),
               ),
-            ),
-          ),
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) => _buildMealCard(index),
-              childCount: _meals.length,
             ),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showAddDialog(),
-        label: Text("Добавить еду"),
-        icon: Icon(Icons.add),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddDialog,
+        child: Icon(Icons.add),
       ),
     );
   }
 
-  Widget _buildStatusCard() {
+  Widget _buildChartCard() {
     return Container(
-      padding: EdgeInsets.all(20),
+      height: 200,
+      margin: EdgeInsets.all(16),
+      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [Colors.blueAccent, Colors.lightBlue]),
-        borderRadius: BorderRadius.circular(30),
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
       ),
-      child: Column(
+      child: Row(
         children: [
-          Text(_getMotivationText(), style: TextStyle(color: Colors.white, fontSize: 16)),
-          SizedBox(height: 15),
-          LinearProgressIndicator(
-            value: (_totalCalories / _goal).clamp(0.0, 1.0),
-            backgroundColor: Colors.white24,
-            color: Colors.white,
-            minHeight: 10,
-            borderRadius: BorderRadius.circular(10),
+          Expanded(
+            child: PieChart(
+              PieChartData(
+                sections: [
+                  PieChartSectionData(
+                    value: _totalCalories.toDouble(),
+                    color: Colors.blueAccent,
+                    title: '',
+                    radius: 20,
+                  ),
+                  PieChartSectionData(
+                    value: (_goal - _totalCalories).clamp(0, _goal).toDouble(),
+                    color: Colors.grey[300],
+                    title: '',
+                    radius: 15,
+                  ),
+                ],
+                centerSpaceRadius: 40,
+              ),
+            ),
           ),
-          SizedBox(height: 15),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _statColumn("Съедено", _totalCalories.toString()),
-              _statColumn("Цель", _goal.toString()),
-              _statColumn("Осталось", (_goal - _totalCalories).toString()),
+              _indicator(Colors.blueAccent, "Съедено"),
+              _indicator(Colors.grey[300]!, "Осталось"),
+              SizedBox(height: 10),
+              Text("$_totalCalories / $_goal", style: TextStyle(fontWeight: FontWeight.bold)),
             ],
           )
         ],
@@ -167,46 +203,26 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _statColumn(String label, String value) {
-    return Column(
-      children: [
-        Text(value, style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
-        Text(label, style: TextStyle(color: Colors.white70, fontSize: 12)),
-      ],
-    );
-  }
-
-  Widget _buildMealCard(int index) {
-    final meal = _meals[index];
-    return Card(
-      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: ListTile(
-        leading: Icon(Icons.fastfood, color: meal['calories'] > 500 ? Colors.orange : Colors.blue),
-        title: Text(meal['name']),
-        subtitle: Text("Сегодня"),
-        trailing: Text("${meal['calories']} ккал", style: TextStyle(fontWeight: FontWeight.bold)),
-      ),
-    );
+  Widget _indicator(Color color, String text) {
+    return Row(children: [
+      Container(width: 12, height: 12, color: color),
+      SizedBox(width: 8),
+      Text(text, style: TextStyle(fontSize: 12)),
+    ]);
   }
 
   void _showAddDialog() {
     String name = '';
     int cals = 0;
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom, left: 20, right: 20, top: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(decoration: InputDecoration(hintText: "Название"), onChanged: (v) => name = v),
-            TextField(decoration: InputDecoration(hintText: "Калории"), keyboardType: TextInputType.number, onChanged: (v) => cals = int.tryParse(v) ?? 0),
-            SizedBox(height: 20),
-            ElevatedButton(onPressed: () { if(name.isNotEmpty) _addMeal(name, cals); Navigator.pop(context); }, child: Text("Сохранить")),
-            SizedBox(height: 20),
-          ],
-        ),
+      builder: (context) => AlertDialog(
+        title: Text("Добавить"),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(decoration: InputDecoration(hintText: "Продукт"), onChanged: (v) => name = v),
+          TextField(decoration: InputDecoration(hintText: "Ккал"), keyboardType: TextInputType.number, onChanged: (v) => cals = int.tryParse(v) ?? 0),
+        ]),
+        actions: [ElevatedButton(onPressed: () { _addMeal(name, cals); Navigator.pop(context); }, child: Text("Добавить"))],
       ),
     );
   }
