@@ -18,17 +18,14 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Create project
-        run: flutter create . --platforms android
-
-      # МАГИЯ: Принудительно поднимаем версию SDK до 21 (Android 5.0+)
-      # Это лечит 99% конфликтов с новыми библиотеками
-      - name: Fix SDK version
+      - name: Build Project
         run: |
-          sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle
-
-      - name: Install dependencies
-        run: flutter pub get
-      
-      - name: Build APK
-        run: flutter build apk --release
+          flutter create . --platforms android
+          flutter pub get
+          flutter build apk --release
+          
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: calorie-app-v3
+          path: build/app/outputs/flutter-apk/app-release.apk
