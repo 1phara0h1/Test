@@ -18,18 +18,16 @@ jobs:
         with:
           channel: 'stable'
 
-      # МАГИЯ ТУТ: Робот сам создаст недостающие Gradle-файлы
       - name: Create native Android files
         run: flutter create . --platforms android
-      
+
+      # ДОБАВИЛИ ЭТО: Даем права на выполнение Gradle
+      - name: Make gradlew executable
+        run: chmod +x android/gradlew
+
       - name: Install dependencies
         run: flutter pub get
       
       - name: Build APK
-        run: flutter build apk --release
-
-      - name: Upload APK Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: calorie-app-release
-          path: build/app/outputs/flutter-apk/app-release.apk
+        # Добавили флаг --no-pub, так как мы уже сделали pub get
+        run: flutter build apk --release --no-pub
