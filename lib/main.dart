@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'package:fl_chart/fl_chart.dart'; // Импорт графиков
 
 void main() => runApp(CalorieApp());
 
@@ -13,8 +12,21 @@ class CalorieApp extends StatefulWidget {
 class _CalorieAppState extends State<CalorieApp> {
   bool _isDark = false;
 
-  void _toggleTheme(bool value) {
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  void _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() => _isDark = prefs.getBool('isDark') ?? false);
+  }
+
+  void _toggleTheme(bool value) async {
     setState(() => _isDark = value);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('isDark', value);
   }
 
   @override
@@ -22,7 +34,7 @@ class _CalorieAppState extends State<CalorieApp> {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        useMaterial3: true, 
+        useMaterial3: true,
         colorSchemeSeed: Colors.blueAccent,
         brightness: _isDark ? Brightness.dark : Brightness.light,
       ),
@@ -77,63 +89,22 @@ class _HomePageState extends State<HomePage> {
     _saveData();
   }
 
-  void _showSettings() {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ListTile(
-            leading: Icon(Icons.dark_mode),
-            title: Text("Темная тема"),
-            trailing: Switch(value: widget.isDark, onChanged: (v) {
-              widget.onThemeChanged(v);
-              Navigator.pop(context);
-            }),
-          ),
-          ListTile(
-            leading: Icon(Icons.edit),
-            title: Text("Изменить цель (ккал)"),
-            onTap: () {
-              Navigator.pop(context);
-              _changeGoal();
-            },
-          ),
-          SizedBox(height: 20),
-        ],
-      ),
-    );
-  }
-
-  void _changeGoal() {
-    TextEditingController _controller = TextEditingController(text: _goal.toString());
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Дневная цель'),
-        content: TextField(controller: _controller, keyboardType: TextInputType.number),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('ОК')),
-          ElevatedButton(onPressed: () {
-            setState(() => _goal = int.tryParse(_controller.text) ?? 2000);
-            _saveData();
-            Navigator.pop(context);
-          }, child: Text('Сохранить')),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Трекер калорий'),
-        actions: [IconButton(icon: Icon(Icons.settings), onPressed: _showSettings)],
+        title: Text('Дневник питания'),
+        actions: [
+          IconButton(
+            icon: Icon(widget.isDark ? Icons.light_mode : Icons.dark_mode),
+            onPressed: () => widget.onThemeChanged(!widget.isDark),
+          ),
+          IconButton(icon: Icon(Icons.settings), onPressed: _changeGoal),
+        ],
       ),
       body: Column(
         children: [
-          _buildChartCard(),
+          _buildStatusHeader(),
           Expanded(
             child: ListView.builder(
               itemCount: _meals.length,
@@ -155,60 +126,43 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildChartCard() {
+  Widget _buildStatusHeader() {
+    double progress = (_totalCalories / _goal).clamp(0.0, 1.0);
     return Container(
-      height: 200,
+      padding: EdgeInsets.all(20),
       margin: EdgeInsets.all(16),
-      padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
+        color: Theme.of(context).colorScheme.primaryContainer,
         borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 5)],
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: PieChart(
-              PieChartData(
-                sections: [
-                  PieChartSectionData(
-                    value: _totalCalories.toDouble(),
-                    color: Colors.blueAccent,
-                    title: '',
-                    radius: 20,
-                  ),
-                  PieChartSectionData(
-                    value: (_goal - _totalCalories).clamp(0, _goal).toDouble(),
-                    color: Colors.grey[300],
-                    title: '',
-                    radius: 15,
-                  ),
-                ],
-                centerSpaceRadius: 40,
-              ),
-            ),
-          ),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _indicator(Colors.blueAccent, "Съедено"),
-              _indicator(Colors.grey[300]!, "Осталось"),
-              SizedBox(height: 10),
-              Text("$_totalCalories / $_goal", style: TextStyle(fontWeight: FontWeight.bold)),
-            ],
-          )
+          Text("Съедено: $_totalCalories / $_goal ккал", 
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          SizedBox(height: 10),
+          LinearProgressIndicator(value: progress, minHeight: 8, borderRadius: BorderRadius.circular(10)),
         ],
       ),
     );
   }
 
-  Widget _indicator(Color color, String text) {
-    return Row(children: [
-      Container(width: 12, height: 12, color: color),
-      SizedBox(width: 8),
-      Text(text, style: TextStyle(fontSize: 12)),
-    ]);
+  void _changeGoal() {
+    TextEditingController ctrl = TextEditingController(text: _goal.toString());
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Изменить цель'),
+        content: TextField(controller: ctrl, keyboardType: TextInputType.number),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Отмена')),
+          ElevatedButton(onPressed: () {
+            setState(() => _goal = int.tryParse(ctrl.text) ?? 2000);
+            _saveData();
+            Navigator.pop(context);
+          }, child: Text('Сохранить')),
+        ],
+      ),
+    );
   }
 
   void _showAddDialog() {
@@ -217,12 +171,14 @@ class _HomePageState extends State<HomePage> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: Text("Добавить"),
+        title: Text("Добавить еду"),
         content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(decoration: InputDecoration(hintText: "Продукт"), onChanged: (v) => name = v),
-          TextField(decoration: InputDecoration(hintText: "Ккал"), keyboardType: TextInputType.number, onChanged: (v) => cals = int.tryParse(v) ?? 0),
+          TextField(decoration: InputDecoration(hintText: "Что съели?"), onChanged: (v) => name = v),
+          TextField(decoration: InputDecoration(hintText: "Калории"), keyboardType: TextInputType.number, onChanged: (v) => cals = int.tryParse(v) ?? 0),
         ]),
-        actions: [ElevatedButton(onPressed: () { _addMeal(name, cals); Navigator.pop(context); }, child: Text("Добавить"))],
+        actions: [
+          ElevatedButton(onPressed: () { _addMeal(name, cals); Navigator.pop(context); }, child: Text("Добавить"))
+        ],
       ),
     );
   }
