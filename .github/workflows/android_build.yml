@@ -18,16 +18,17 @@ jobs:
         with:
           channel: 'stable'
 
-      - name: Create native Android files
+      - name: Create project
         run: flutter create . --platforms android
 
-      # ДОБАВИЛИ ЭТО: Даем права на выполнение Gradle
-      - name: Make gradlew executable
-        run: chmod +x android/gradlew
+      # МАГИЯ: Принудительно поднимаем версию SDK до 21 (Android 5.0+)
+      # Это лечит 99% конфликтов с новыми библиотеками
+      - name: Fix SDK version
+        run: |
+          sed -i 's/minSdkVersion .*/minSdkVersion 21/' android/app/build.gradle
 
       - name: Install dependencies
         run: flutter pub get
       
       - name: Build APK
-        # Добавили флаг --no-pub, так как мы уже сделали pub get
-        run: flutter build apk --release --no-pub
+        run: flutter build apk --release
