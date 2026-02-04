@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 void main() => runApp(CalorieApp());
 
@@ -19,21 +21,48 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  final List<Map<String, dynamic>> _meals = [];
+  List<Map<String, dynamic>> _meals = [];
   int _totalCalories = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData(); // Загружаем данные при запуске
+  }
+
+  // Загрузка из памяти
+  void _loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? mealsString = prefs.getString('meals');
+    if (mealsString != null) {
+      setState(() {
+        _meals = List<Map<String, dynamic>>.from(json.decode(mealsString));
+        _totalCalories = _meals.fold(0, (sum, item) => sum + (item['calories'] as int));
+      });
+    }
+  }
+
+  // Сохранение в память
+  void _saveData() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('meals', json.encode(_meals));
+  }
 
   void _addMeal(String name, int calories) {
     setState(() {
       _meals.add({'name': name, 'calories': calories});
       _totalCalories += calories;
     });
+    _saveData();
   }
 
-  void _reset() {
+  void _reset() async {
     setState(() {
       _meals.clear();
       _totalCalories = 0;
     });
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('meals');
   }
 
   @override
@@ -59,6 +88,7 @@ class _HomePageState extends State<HomePage> {
                 return ListTile(
                   title: Text(_meals[index]['name']),
                   trailing: Text('${_meals[index]['calories']} ккал'),
+                  leading: Icon(Icons.fastfood, color: Colors.orangeAccent),
                 );
               },
             ),
@@ -94,6 +124,7 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: Text('Отмена')),
           TextButton(
             onPressed: () {
               if (name.isNotEmpty && calories > 0) _addMeal(name, calories);
